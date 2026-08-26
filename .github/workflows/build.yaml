@@ -9,6 +9,7 @@ permissions:
   packages: write
   attestations: write
   security-events: write
+  artifact-metadata: write
 
 env:
   REGISTRY: ghcr.io
