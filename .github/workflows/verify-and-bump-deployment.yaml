@@ -1,0 +1,119 @@
+name: Verify Provenance and Bump Deployment
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: "Fully qualified image ref without digest, e.g. ghcr.io/org/app"
+        required: true
+        type: string
+      digest:
+        description: "Image digest to verify and deploy, e.g. sha256:..."
+        required: true
+        type: string
+      owner:
+        description: "GitHub org/user that owns the image, used for gh attestation verify --owner"
+        required: true
+        type: string
+      signer-workflow:
+        description: "Trusted workflow identity that must have signed the attestation, e.g. org/workflows/.github/workflows/build.yaml"
+        required: true
+        type: string
+      registry-username:
+        description: "Username for registry login (needed to pull the manifest for verification)"
+        required: true
+        type: string
+      registry:
+        description: "Registry hostname"
+        required: false
+        type: string
+        default: "ghcr.io"
+      deploy-repo:
+        description: "owner/repo of the GitOps repo containing the deployment manifest"
+        required: true
+        type: string
+      deployment-file:
+        description: "Path within deploy-repo to the manifest containing the image digest"
+        required: true
+        type: string
+      base-branch:
+        description: "Branch in deploy-repo to open the PR against"
+        required: false
+        type: string
+        default: "main"
+    secrets:
+      registry-token:
+        description: "Token for registry login"
+        required: true
+      deploy-repo-token:
+        description: "Token with contents + pull-request write access to deploy-repo"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-bump:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ${{ inputs.image }}
+      DIGEST: ${{ inputs.digest }}
+    steps:
+      - name: Authenticate to registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.registry-username }}
+          password: ${{ secrets.registry-token }}
+
+      - name: Verify SLSA provenance for built digest
+        env:
+          GH_TOKEN: ${{ secrets.registry-token }}
+          OWNER: ${{ inputs.owner }}
+          SIGNER_WORKFLOW: ${{ inputs.signer-workflow }}
+        run: |
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" \
+            --owner "${OWNER}" \
+            --signer-workflow "${SIGNER_WORKFLOW}"
+
+      - name: Checkout deploy repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.deploy-repo }}
+          ref: ${{ inputs.base-branch }}
+          token: ${{ secrets.deploy-repo-token }}
+          path: deploy-repo
+
+      - name: Bump image digest
+        shell: bash
+        working-directory: deploy-repo
+        env:
+          DEPLOYMENT_FILE: ${{ inputs.deployment-file }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="bump-$(basename "${IMAGE}")-${DIGEST#sha256:}"
+          BRANCH="${BRANCH:0:50}"
+          git checkout -b "$BRANCH"
+          sed -i -E "s|(image: ${IMAGE}@)sha256:[a-f0-9]+|\1${DIGEST}|" "$DEPLOYMENT_FILE"
+          if git diff --exit-code "$DEPLOYMENT_FILE"; then
+            echo "No change, skipping"
+            exit 0
+          fi
+          git commit -am "Bump $(basename "${IMAGE}") to ${DIGEST}"
+          git push origin "$BRANCH"
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Open and auto-merge PR
+        if: env.BRANCH != ''
+        shell: bash
+        working-directory: deploy-repo
+        env:
+          GH_TOKEN: ${{ secrets.deploy-repo-token }}
+          BASE_BRANCH: ${{ inputs.base-branch }}
+        run: |
+          PR_URL=$(gh pr create \
+            --title "Bump $(basename "${IMAGE}") to ${DIGEST}" \
+            --body "Automated bump after verified SLSA provenance for ${IMAGE}@${DIGEST}." \
+            --base "${BASE_BRANCH}" --head "$BRANCH")
+          gh pr merge "$PR_URL" --squash --auto
