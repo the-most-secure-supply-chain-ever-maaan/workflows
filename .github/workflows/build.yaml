@@ -2,6 +2,10 @@ name: Build application
 
 on:
   workflow_call:
+    outputs:
+      digest:
+        description: "Digest til det pushede imaget"
+        value: ${{ jobs.build-source.outputs.digest }}
 
 permissions:
   contents: read
@@ -18,6 +22,8 @@ env:
 jobs:
   build-source:
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build_image.outputs.digest }}
     steps:
       - name: Checkout Source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
