@@ -37,7 +37,7 @@ on:
         required: true
         type: string
       base-branch:
-        description: "Branch in deploy-repo to open the PR against"
+        description: "Branch in deploy-repo to push the bump to"
         required: false
         type: string
         default: "main"
@@ -46,7 +46,7 @@ on:
         description: "Token for registry login"
         required: true
       deploy-repo-token:
-        description: "Token with contents + pull-request write access to deploy-repo"
+        description: "Token with contents write access to deploy-repo"
         required: true
 
 permissions:
@@ -92,28 +92,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          BRANCH="bump-$(basename "${IMAGE}")-${DIGEST#sha256:}"
-          BRANCH="${BRANCH:0:50}"
-          git checkout -b "$BRANCH"
           sed -i -E "s|(image: ${IMAGE}@)sha256:[a-f0-9]+|\1${DIGEST}|" "$DEPLOYMENT_FILE"
           if git diff --exit-code "$DEPLOYMENT_FILE"; then
             echo "No change, skipping"
             exit 0
           fi
           git commit -am "Bump $(basename "${IMAGE}") to ${DIGEST}"
-          git push origin "$BRANCH"
-          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
-
-      - name: Open and auto-merge PR
-        if: env.BRANCH != ''
-        shell: bash
-        working-directory: deploy-repo
-        env:
-          GH_TOKEN: ${{ secrets.deploy-repo-token }}
-          BASE_BRANCH: ${{ inputs.base-branch }}
-        run: |
-          PR_URL=$(gh pr create \
-            --title "Bump $(basename "${IMAGE}") to ${DIGEST}" \
-            --body "Automated bump after verified SLSA provenance for ${IMAGE}@${DIGEST}." \
-            --base "${BASE_BRANCH}" --head "$BRANCH")
-          gh pr merge "$PR_URL" --squash --auto
+          git push origin HEAD
