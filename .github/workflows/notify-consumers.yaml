@@ -1,0 +1,54 @@
+name: Bump builder SHA in consumers
+
+# Når build.yaml eller verify-and-bump-deployment.yaml merges til main,
+# åpnes det PR i repoet som kaller dem, med ny SHA.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build.yaml"
+      - ".github/workflows/verify-and-bump-deployment.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    env:
+      CONSUMER: the-most-secure-supply-chain-ever-maaan/thunderbolt
+      NEW_SHA: ${{ github.sha }}
+      REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.CONSUMER_PAT }}
+    steps:
+      - name: Checkout consumer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: the-most-secure-supply-chain-ever-maaan/thunderbolt
+          token: ${{ secrets.CONSUMER_PAT }}
+
+      - name: Bump builder SHA and open PR
+        run: |
+          set -euo pipefail
+
+          find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0 \
+            | xargs -0 sed -i -E \
+                "s|(${REPO}/\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml@)[0-9a-f]{40}|\1${NEW_SHA}|g"
+
+          if git diff --quiet; then
+            echo "Allerede oppdatert, ingenting å gjøre."
+            exit 0
+          fi
+
+          BRANCH="bump-builder-${NEW_SHA:0:7}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -am "Bump builder til ${NEW_SHA}"
+          git push --force origin "$BRANCH"
+
+          gh pr create --repo "$CONSUMER" --head "$BRANCH" --base main \
+            --title "Bump builder til ${NEW_SHA:0:7}" \
+            --body "Automatisk PR fra \`${REPO}\`. Builder-workflowene er oppdatert til \`${NEW_SHA}\`." \
+            || echo "PR finnes allerede."
