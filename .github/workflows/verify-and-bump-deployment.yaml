@@ -11,14 +11,6 @@ on:
         description: "Image digest to verify and deploy, e.g. sha256:..."
         required: true
         type: string
-      owner:
-        description: "GitHub org/user that owns the image, used for gh attestation verify --owner"
-        required: true
-        type: string
-      signer-workflow:
-        description: "Trusted workflow identity that must have signed the attestation, e.g. org/workflows/.github/workflows/build.yaml"
-        required: true
-        type: string
       registry-username:
         description: "Username for registry login (needed to pull the manifest for verification)"
         required: true
@@ -28,14 +20,6 @@ on:
         required: false
         type: string
         default: "ghcr.io"
-      deploy-repo:
-        description: "owner/repo of the GitOps repo containing the deployment manifest"
-        required: true
-        type: string
-      deployment-file:
-        description: "Path within deploy-repo to the manifest containing the image digest"
-        required: true
-        type: string
       base-branch:
         description: "Branch in deploy-repo to push the bump to"
         required: false
@@ -69,8 +53,10 @@ jobs:
       - name: Verify SLSA provenance for built digest
         env:
           GH_TOKEN: ${{ secrets.registry-token }}
-          OWNER: ${{ inputs.owner }}
-          SIGNER_WORKFLOW: ${{ inputs.signer-workflow }}
+          # Trust anchor is fixed here, not caller-supplied: a repo calling this
+          # workflow cannot redefine who it trusts as the image signer.
+          OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: the-most-secure-supply-chain-ever-maaan/workflows/.github/workflows/build.yaml
         run: |
           gh attestation verify "oci://${IMAGE}@${DIGEST}" \
             --owner "${OWNER}" \
@@ -79,7 +65,7 @@ jobs:
       - name: Checkout deploy repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.deploy-repo }}
+          repository: ${{ github.repository_owner }}/cluster-config
           ref: ${{ inputs.base-branch }}
           token: ${{ secrets.deploy-repo-token }}
           path: deploy-repo
@@ -87,9 +73,11 @@ jobs:
       - name: Bump image digest
         shell: bash
         working-directory: deploy-repo
-        env:
-          DEPLOYMENT_FILE: ${{ inputs.deployment-file }}
         run: |
+          # Deployment file path follows the fixed apps/<repo>/deployment.yml
+          # convention, derived from the caller's own repo name, so a caller
+          # can only ever bump its own manifest.
+          DEPLOYMENT_FILE="apps/${GITHUB_REPOSITORY#*/}/deployment.yml"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           sed -i -E "s|(image: ${IMAGE}@)sha256:[a-f0-9]+|\1${DIGEST}|" "$DEPLOYMENT_FILE"
