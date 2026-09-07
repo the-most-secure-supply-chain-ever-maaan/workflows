@@ -68,7 +68,7 @@ jobs:
       - name: Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.3.6
         with:
-          image-ref: ${{ github.event_name == 'pull_request' && 'scan-target:local' || steps.meta.outputs.tags }}
+          image-ref: ${{ github.event_name == 'pull_request' && 'scan-target:local' || format('{0}/{1}@{2}', env.REGISTRY, env.IMAGE_NAME, steps.build_image.outputs.digest) }}
           format: "sarif"
           output: "trivy-results.sarif"
           exit-code: "1"
