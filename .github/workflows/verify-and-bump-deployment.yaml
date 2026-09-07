@@ -3,10 +3,6 @@ name: Verify Provenance and Bump Deployment
 on:
   workflow_call:
     inputs:
-      image:
-        description: "Fully qualified image ref without digest, e.g. ghcr.io/org/app"
-        required: true
-        type: string
       digest:
         description: "Image digest to verify and deploy, e.g. sha256:..."
         required: true
@@ -39,10 +35,16 @@ permissions:
 jobs:
   verify-and-bump:
     runs-on: ubuntu-latest
+    concurrency:
+      group: bump-${{ github.repository_owner }}-cluster-config-${{ inputs.base-branch }}
     env:
-      IMAGE: ${{ inputs.image }}
+      IMAGE: ghcr.io/${{ github.repository }}
       DIGEST: ${{ inputs.digest }}
     steps:
+      - name: Validate digest format
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "Invalid digest format: $DIGEST"; exit 1; }
+
       - name: Authenticate to registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
