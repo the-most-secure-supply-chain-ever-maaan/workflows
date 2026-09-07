@@ -1,6 +1,6 @@
-name: Bump shared workflow SHAs in consumers
+name: Bump shared workflow SHAs 
 
-# Når en av de delte workflowene merges til main, åpnes det PR i repoet
+# Når en av de delte workflowene merges til main, åpnes det PR i thunderbolt repoet
 # som kaller dem, med commit-SHA-en til dette repoet.
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout consumer
+      - name: Checkout Thunderbolt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: the-most-secure-supply-chain-ever-maaan/thunderbolt
