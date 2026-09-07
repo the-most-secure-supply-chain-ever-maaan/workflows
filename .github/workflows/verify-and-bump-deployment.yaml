@@ -53,8 +53,6 @@ jobs:
       - name: Verify SLSA provenance for built digest
         env:
           GH_TOKEN: ${{ secrets.registry-token }}
-          # Trust anchor is fixed here, not caller-supplied: a repo calling this
-          # workflow cannot redefine who it trusts as the image signer.
           OWNER: ${{ github.repository_owner }}
           SIGNER_WORKFLOW: the-most-secure-supply-chain-ever-maaan/workflows/.github/workflows/build.yaml
         run: |
