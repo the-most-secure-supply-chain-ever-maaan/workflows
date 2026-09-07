@@ -16,11 +16,6 @@ on:
         required: false
         type: string
         default: "ghcr.io"
-      base-branch:
-        description: "Branch in deploy-repo to push the bump to"
-        required: false
-        type: string
-        default: "main"
     secrets:
       registry-token:
         description: "Token for registry login"
@@ -36,7 +31,7 @@ jobs:
   verify-and-bump:
     runs-on: ubuntu-latest
     concurrency:
-      group: bump-${{ github.repository_owner }}-cluster-config-${{ inputs.base-branch }}
+      group: bump-${{ github.repository_owner }}-cluster-config-main
     env:
       IMAGE: ghcr.io/${{ github.repository }}
       DIGEST: ${{ inputs.digest }}
@@ -66,13 +61,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/cluster-config
-          ref: ${{ inputs.base-branch }}
+          ref: main
           token: ${{ secrets.deploy-repo-token }}
           path: deploy-repo
 
       - name: Bump image digest
         shell: bash
         working-directory: deploy-repo
+        env:
+          GH_TOKEN: ${{ secrets.deploy-repo-token }}
         run: |
           # Deployment file path follows the fixed apps/<repo>/deployment.yml
           # convention, derived from the caller's own repo name, so a caller
@@ -85,5 +82,12 @@ jobs:
             echo "No change, skipping"
             exit 0
           fi
+
+
+          BRANCH="bump-${GITHUB_REPOSITORY#*/}-${DIGEST:7:12}"
+          git checkout -b "$BRANCH"
           git commit -am "Bump $(basename "${IMAGE}") to ${DIGEST}"
-          git push origin HEAD
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Bump $(basename "${IMAGE}") to ${DIGEST}" --body ""
+          gh pr merge "$BRANCH" --auto --squash --delete-branch
