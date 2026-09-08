@@ -98,7 +98,7 @@ jobs:
     name: Verify Provenance and Update Deployment
     needs: build-source
     if: github.event_name == 'push'
-    uses: the-most-secure-supply-chain-ever-maaan/workflows/.github/workflows/verify-and-bump-deployment.yaml@bf94f2b4fb42f4ea2727c5b29a5eb3161328d98b # v1.4.0
+    uses: ./.github/workflows/verify-and-bump-deployment.yaml
     with:
       digest: ${{ needs.build-source.outputs.digest }}
       registry-username: ${{ github.actor }}
