@@ -6,6 +6,13 @@ on:
       digest:
         description: "Digest til det pushede imaget"
         value: ${{ jobs.build-source.outputs.digest }}
+    secrets:
+      deploy-repo-token:
+        description: >-
+          Token with contents write + PR access to <owner>/cluster-config.
+          Secrets are only passed to the workflow that is called directly, so
+          the top-level workflow must pass this explicitly; it is not inherited.
+        required: true
 
 permissions:
   contents: read
@@ -42,7 +49,7 @@ jobs:
 
       - name: Set up QEMU
         id: setup-qemu
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push'
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
 
       - name: Extract metadata
@@ -63,7 +70,7 @@ jobs:
       - name: Push Docker image to registry
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         id: build_image
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push'
         with:
           platforms: "linux/amd64,linux/arm64"
           context: .
@@ -98,10 +105,17 @@ jobs:
     name: Verify Provenance and Update Deployment
     needs: build-source
     if: github.event_name == 'push'
-    uses: ./.github/workflows/verify-and-bump-deployment.yaml
-    with:
-      digest: ${{ needs.build-source.outputs.digest }}
-      registry-username: ${{ github.actor }}
-    secrets:
-      registry-token: ${{ secrets.GITHUB_TOKEN }}
-      deploy-repo-token: ${{ secrets.CLUSTER_CONFIG_TOKEN }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: bump-${{ github.repository_owner }}-cluster-config-main
+    steps:
+      - name: Verify provenance and bump deployment
+        uses: the-most-secure-supply-chain-ever-maaan/workflows/.github/actions/verify-and-bump-deployment@v1.5.0
+        with:
+          digest: ${{ needs.build-source.outputs.digest }}
+          registry: ${{ env.REGISTRY }}
+          registry-username: ${{ github.actor }}
+          registry-token: ${{ secrets.GITHUB_TOKEN }}
+          deploy-repo-token: ${{ secrets.deploy-repo-token }}
