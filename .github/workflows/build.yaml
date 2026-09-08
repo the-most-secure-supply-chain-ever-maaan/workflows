@@ -10,8 +10,6 @@ on:
       deploy-repo-token:
         description: >-
           Token with contents write + PR access to <owner>/cluster-config.
-          Secrets are only passed to the workflow that is called directly, so
-          the top-level workflow must pass this explicitly; it is not inherited.
         required: true
 
 permissions:

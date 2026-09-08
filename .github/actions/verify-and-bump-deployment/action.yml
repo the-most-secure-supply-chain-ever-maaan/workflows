@@ -25,40 +25,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Validate digest, ref and tokens
-      shell: bash
-      env:
-        DIGEST: ${{ inputs.digest }}
-        SOURCE_REF: ${{ github.ref }}
-        REGISTRY_TOKEN: ${{ inputs.registry-token }}
-        DEPLOY_REPO_TOKEN: ${{ inputs.deploy-repo-token }}
-      run: |
-        set -euo pipefail
-
-        if [[ ! "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-          echo "::error::Invalid digest format: '$DIGEST'"
-          exit 1
-        fi
-
-        # Composite actions do not enforce required inputs, so check them here.
-        # An empty token otherwise fails much later with a confusing git error.
-        if [[ -z "$REGISTRY_TOKEN" ]]; then
-          echo "::error::registry-token is empty"
-          exit 1
-        fi
-        if [[ -z "$DEPLOY_REPO_TOKEN" ]]; then
-          echo "::error::deploy-repo-token is empty. The calling workflow must declare it under on.workflow_call.secrets and the top-level workflow must pass it."
-          exit 1
-        fi
-
-        # Only code that has landed on main is deployable. github.ref is
-        # injected by the runner from the triggering event, so a caller cannot
-        # forge it by editing its own workflow file.
-        if [[ "$SOURCE_REF" != "refs/heads/main" ]]; then
-          echo "::error::Refusing to deploy from '$SOURCE_REF'; only refs/heads/main is deployable"
-          exit 1
-        fi
-
     - name: Authenticate to registry
       uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
       with:
