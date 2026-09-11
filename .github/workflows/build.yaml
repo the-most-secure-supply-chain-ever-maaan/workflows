@@ -6,10 +6,18 @@ on:
       digest:
         description: "Digest til det pushede imaget"
         value: ${{ jobs.build-source.outputs.digest }}
+    inputs:
+      bump-app-id:
+        description: App ID for the deploy-dispatch app.
+        type: string
+        required: false
+        default: "4908693"
     secrets:
-      deploy-repo-token:
+      BUMP_CLUSTER_CONFIG_KEY:
         description: >-
-          Token with contents write + PR access to <owner>/cluster-config.
+          Private key for the deploy-dispatch app. The app is installed on
+          <owner>/cluster-config with Actions: write only - it can trigger the
+          bump workflow there, and nothing else.
         required: true
 
 permissions:
@@ -99,88 +107,40 @@ jobs:
           subject-digest: ${{ steps.build_image.outputs.digest }}
           push-to-registry: true
 
-  verify-and-update-digest:
-    name: Verify Provenance and Update Deployment
+  request-deployment-bump:
+    name: Request Deployment Bump
     needs: build-source
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    concurrency:
-      group: bump-${{ github.repository_owner }}-cluster-config-main
     steps:
-      - name: Authenticate to registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - name: Mint dispatch token for cluster-config
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: dispatch-token
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          app-id: ${{ inputs.bump-app-id }}
+          private-key: ${{ secrets.BUMP_CLUSTER_CONFIG_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: cluster-config
+          permission-actions: write
 
-      - name: Verify provenance is from the trusted builder and from this commit
+      - name: Trigger bump in cluster-config
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          DIGEST: ${{ needs.build-source.outputs.digest }}
+          GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
           OWNER: ${{ github.repository_owner }}
-
-          SOURCE_DIGEST: ${{ github.sha }}
-          SIGNER_WORKFLOW: the-most-secure-supply-chain-ever-maaan/workflows/.github/workflows/build.yaml
-        run: |
-          set -euo pipefail
-
-          gh attestation verify "oci://${IMAGE}@${DIGEST}" \
-            --owner "$OWNER" \
-            --signer-workflow "$SIGNER_WORKFLOW" \
-            --predicate-type https://slsa.dev/provenance/v1 \
-            --source-digest "$SOURCE_DIGEST"
-
-          echo "Verified ${IMAGE}@${DIGEST} was built by ${SIGNER_WORKFLOW} from ${GITHUB_REPOSITORY}@${SOURCE_DIGEST}"
-
-      - name: Check out deploy repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ github.repository_owner }}/cluster-config
-          ref: main
-          token: ${{ secrets.deploy-repo-token }}
-          path: deploy-repo
-
-      - name: Bump image digest
-        working-directory: deploy-repo
-        env:
-          GH_TOKEN: ${{ secrets.deploy-repo-token }}
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           DIGEST: ${{ needs.build-source.outputs.digest }}
         run: |
           set -euo pipefail
 
-          # Fixed apps/<repo>/deployment.yml convention, derived from the
-          # caller's own repo name, so a caller can only bump its own manifest.
           APP="${GITHUB_REPOSITORY#*/}"
-          DEPLOYMENT_FILE="apps/${APP}/deployment.yml"
 
-          if [[ ! -f "$DEPLOYMENT_FILE" ]]; then
-            echo "::error::No deployment manifest at $DEPLOYMENT_FILE in cluster-config"
-            exit 1
-          fi
+          gh workflow run bump-image.yml \
+            --repo "${OWNER}/cluster-config" \
+            --ref main \
+            -f app="$APP" \
+            -f digest="$DIGEST" \
+            -f source-digest="$GITHUB_SHA"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          sed -i -E "s|(image: ${IMAGE}@)sha256:[a-f0-9]+|\1${DIGEST}|" "$DEPLOYMENT_FILE"
-
-          if git diff --quiet -- "$DEPLOYMENT_FILE"; then
-            echo "$DEPLOYMENT_FILE is already at ${DIGEST}, nothing to bump"
-            exit 0
-          fi
-
-          BRANCH="bump-${APP}-${DIGEST:7:12}"
-          git checkout -b "$BRANCH"
-          git commit -am "Bump ${APP} to ${DIGEST}"
-          git push --force-with-lease origin "$BRANCH"
-
-          if ! gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
-            gh pr create --base main --head "$BRANCH" \
-              --title "Bump ${APP} to ${DIGEST}" \
-              --body "Provenance verified: built by the trusted build workflow from ${GITHUB_REPOSITORY}@${GITHUB_SHA}."
-          fi
-          gh pr merge "$BRANCH" --auto --squash --delete-branch
+          echo "Requested bump of ${APP} to ${DIGEST} in ${OWNER}/cluster-config."
+          echo "cluster-config verifies provenance itself before acting."
