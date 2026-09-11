@@ -7,17 +7,15 @@ on:
         description: "Digest til det pushede imaget"
         value: ${{ jobs.build-source.outputs.digest }}
     inputs:
-      bump-app-id:
-        description: App ID for the deploy-dispatch app.
+      bump-app-client-id:
+        description: Client ID for the deploy-dispatch app.
         type: string
         required: false
-        default: "4908693"
+        default: "Iv23li3HlIR8BgzxmFjf"
     secrets:
       BUMP_CLUSTER_CONFIG_KEY:
         description: >-
-          Private key for the deploy-dispatch app. The app is installed on
-          <owner>/cluster-config with Actions: write only - it can trigger the
-          bump workflow there, and nothing else.
+          Private key for the deploy-dispatch app.
         required: true
 
 permissions:
@@ -119,7 +117,7 @@ jobs:
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: dispatch-token
         with:
-          app-id: ${{ inputs.bump-app-id }}
+          client-id: ${{ inputs.bump-app-client-id }}
           private-key: ${{ secrets.BUMP_CLUSTER_CONFIG_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: cluster-config
