@@ -97,9 +97,6 @@ jobs:
         with:
           sarif_file: "trivy-results.sarif"
 
-      - name: Run zizmor 🌈
-        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
-
       - name: Generate attestation
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         if: github.event_name != 'pull_request'
