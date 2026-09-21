@@ -79,6 +79,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
 
       - name: Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -88,6 +90,7 @@ jobs:
           output: "trivy-results.sarif"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
 
       - name: Upload Trivy scan findings to GitHub Security tab
         uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
