@@ -6,12 +6,6 @@ on:
       digest:
         description: "Digest til det pushede imaget"
         value: ${{ jobs.build-source.outputs.digest }}
-    inputs:
-      bump-app-client-id:
-        description: Client ID for the deploy-dispatch app.
-        type: string
-        required: false
-        default: "Iv23li3HlIR8BgzxmFjf"
 
 permissions:
   contents: read
@@ -116,42 +110,3 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build_image.outputs.digest }}
           push-to-registry: true
-
-  request-deployment-bump:
-    name: Request Deployment Bump
-    needs: build-source
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment: deploy
-    permissions:
-      contents: read
-    steps:
-      - name: Mint dispatch token for cluster-config
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        id: dispatch-token
-        with:
-          client-id: ${{ inputs.bump-app-client-id }}
-          private-key: ${{ secrets.BUMP_CLUSTER_CONFIG_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: cluster-config
-          permission-actions: write
-
-      - name: Trigger bump in cluster-config
-        env:
-          GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
-          OWNER: ${{ github.repository_owner }}
-          DIGEST: ${{ needs.build-source.outputs.digest }}
-        run: |
-          set -euo pipefail
-
-          APP="${GITHUB_REPOSITORY#*/}"
-
-          gh workflow run bump-image.yml \
-            --repo "${OWNER}/cluster-config" \
-            --ref main \
-            -f app="$APP" \
-            -f digest="$DIGEST" \
-            -f source-digest="$GITHUB_SHA"
-
-          echo "Requested bump of ${APP} to ${DIGEST} in ${OWNER}/cluster-config."
-          echo "cluster-config verifies provenance itself before acting."
