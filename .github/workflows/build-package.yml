@@ -10,9 +10,6 @@ on:
 permissions:
   contents: read
 
-env:
-  REGISTRY_URL: https://npm.pkg.github.com
-
 jobs:
   publish-package:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -60,6 +57,7 @@ jobs:
           subject-path: ${{ steps.pack.outputs.TARBALL }}
 
       - name: Publish package
-        run: npm publish "${{ steps.pack.outputs.TARBALL }}"
         env:
+          TARBALL: ${{ steps.pack.outputs.TARBALL }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm publish "$TARBALL"
