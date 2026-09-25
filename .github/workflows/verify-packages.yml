@@ -1,0 +1,73 @@
+name: Verify packages
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  SCOPE: "@the-most-secure-supply-chain-ever-maaan"
+  SIGNER_WORKFLOW: "the-most-secure-supply-chain-ever-maaan/workflows/.github/workflows/build-package.yml"
+  REGISTRY: "https://npm.pkg.github.com"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify attestations for internal packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+
+        run: |
+          set -euo pipefail
+
+          PKGS=$(jq -r --arg s "node_modules/$SCOPE/" \
+            '.packages | keys[] | select(startswith($s))' package-lock.json)
+
+          if [ -z "$PKGS" ]; then
+            echo "Ingen interne pakker under $SCOPE"
+            exit 0
+          fi
+
+          WORKDIR=$(mktemp -d)
+          printf '%s:registry=%s\n' "$SCOPE" "$REGISTRY" > "$WORKDIR/.npmrc"
+          printf '//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}\n' >> "$WORKDIR/.npmrc"
+
+          FAILED=0
+
+          for P in $PKGS; do
+            NAME="${P##*node_modules/}"
+            REPO="${NAME##*/}"
+            VERSION=$(jq -r --arg p "$P" '.packages[$p].version' package-lock.json)
+
+            echo "::group::$NAME@$VERSION"
+
+            FILE=$(cd "$WORKDIR" && npm pack "$NAME@$VERSION" --silent)
+            TARBALL="$WORKDIR/$FILE"
+
+            gh attestation verify "$TARBALL" \
+              --repo "$OWNER/$REPO" \
+              --signer-workflow "$SIGNER_WORKFLOW" \
+              --predicate-type https://slsa.dev/provenance/v1 \
+              --source-ref refs/heads/main || FAILED=1
+
+            rm -f "$TARBALL"
+            echo "::endgroup::"
+          done
+
+          [ "$FAILED" -eq 0 ] || {
+            echo "::error::En eller flere interne pakker mangler gyldig attestasjon"
+            exit 1
+          }
