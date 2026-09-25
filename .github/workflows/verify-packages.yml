@@ -15,7 +15,6 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     permissions:
-      attestations: read
       contents: read
       packages: read
       attestations: read
