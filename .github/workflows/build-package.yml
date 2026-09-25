@@ -7,14 +7,12 @@ on:
         description: "Digest til den publiserte pakken"
         value: ${{ jobs.publish.outputs.digest }}
 
-permissions:
-  contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write
     outputs:
       tarball: ${{ steps.pack.outputs.tarball }}
       digest: ${{ steps.pack.outputs.digest }}
@@ -26,8 +24,6 @@ jobs:
 
       - name: Run zizmor
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
-        with:
-          advanced-security: false
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -106,5 +102,4 @@ jobs:
         env:
           TARBALL: ${{ needs.build.outputs.tarball }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm publish "$TARBALL"
