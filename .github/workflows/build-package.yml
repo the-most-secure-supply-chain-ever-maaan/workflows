@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   build:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -46,6 +45,7 @@ jobs:
           exit-code: "1"
 
       - name: Pack package
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: pack
         run: |
           set -euo pipefail
@@ -54,6 +54,7 @@ jobs:
           echo "digest=sha256:$(sha256sum "$TARBALL" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Upload tarball
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: package-tarball
@@ -61,6 +62,7 @@ jobs:
           retention-days: 1
 
   publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:
