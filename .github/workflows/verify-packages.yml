@@ -18,6 +18,7 @@ jobs:
       attestations: read
       contents: read
       packages: read
+      attestations: read
     steps:
       - name: Checkout source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,6 +30,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: ${{ github.repository_owner }}
+
         run: |
           set -euo pipefail
 
@@ -41,7 +43,6 @@ jobs:
           fi
 
           WORKDIR=$(mktemp -d)
-
           printf '%s:registry=%s\n' "$SCOPE" "$REGISTRY" > "$WORKDIR/.npmrc"
           printf '//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}\n' >> "$WORKDIR/.npmrc"
 
