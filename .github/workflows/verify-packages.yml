@@ -48,7 +48,7 @@ jobs:
           FAILED=0
 
           for P in $PKGS; do
-            NAME="${P#node_modules/}"
+            NAME="${P##*node_modules/}"
             REPO="${NAME##*/}"
             VERSION=$(jq -r --arg p "$P" '.packages[$p].version' package-lock.json)
 
