@@ -102,4 +102,4 @@ jobs:
         env:
           TARBALL: ${{ needs.build.outputs.tarball }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm publish "$TARBALL"
+        run: npm publish "$TARBALL" --ignore-scripts
