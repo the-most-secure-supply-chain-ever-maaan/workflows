@@ -86,11 +86,12 @@ jobs:
             echo "::group::$NAME@$VERSION"
             FILE="$WORK/pkg-$i.tgz"
 
-            # Hent NØYAKTIG det npm ci vil hente – ingen .npmrc involvert
+            # Hent pakke fra GitHub-registryet
             curl -fsSL --proto '=https' \
               -H "Authorization: Bearer $GH_TOKEN" \
               -o "$FILE" "$RESOLVED"
 
+            # Sjekk integritet av nedlastet pakke og verifiser attestasjon
             ACTUAL="sha512-$(openssl dgst -sha512 -binary "$FILE" | base64 -w0)"
             if [[ "$ACTUAL" != "$INTEGRITY" ]]; then
               echo "::error::Integrity-mismatch for $NAME@$VERSION"
