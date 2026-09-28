@@ -43,13 +43,16 @@ jobs:
           exit-code: "1"
 
       - name: Pack package
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          IS_RELEASE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || ''}}
         id: pack
         run: |
           set -euo pipefail
-          TARBALL=$(npm pack --json | jq -r '.[0].filename')
-          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
-          echo "digest=sha256:$(sha256sum "$TARBALL" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          TARBALL=$(npm pack --json ${{ (!(env.IS_RELEASE) && '--dry-run') || ''}} | jq -r '.[0].filename')
+          if [ $IS_RELEASE ]; then
+            echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+            echo "digest=sha256:$(sha256sum "$TARBALL" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload tarball
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
