@@ -1,0 +1,131 @@
+name: Verify packages
+
+on:
+  workflow_call:
+
+env:
+  ORG: "the-most-secure-supply-chain-ever-maaan"
+  SIGNER_WORKFLOW_PATH: ".github/workflows/build-package.yml"
+  SIGNER_REF: "refs/heads/main"
+  SOURCE_REF: "refs/heads/main"
+  REGISTRY: "https://npm.pkg.github.com/"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify attestations for internal packages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+ 
+          SCOPE="@${ORG}"
+          SIGNER_ID="https://github.com/${ORG}/workflows/${SIGNER_WORKFLOW_PATH}@${SIGNER_REF}"
+          WORK=$(mktemp -d)
+          trap 'rm -rf "$WORK"' EXIT
+ 
+          jq -e '((.lockfileVersion // 0) >= 2) and ((.packages | type) == "object")' \
+            package-lock.json >/dev/null \
+            || { echo "::error::Krever lockfileVersion >= 2"; exit 1; }
+ 
+          # Alt under scopet (uansett nesting) ELLER fra GitHub-registryet.
+          # "-" som fyll, ellers kollapser tomme TSV-felt.
+          jq -r --arg s "node_modules/${SCOPE}/" --arg r "$REGISTRY" '
+            .packages | to_entries[]
+            | select(.key != "")
+            | select((.key | contains($s)) or ((.value.resolved // "") | startswith($r)))
+            | [ (.value.name // (.key | sub(".*node_modules/"; ""))),
+                (.value.version   // "-"),
+                (.value.resolved  // "-"),
+                (.value.integrity // "-") ]
+            | @tsv' package-lock.json > "$WORK/list.tsv"
+ 
+          if [ ! -s "$WORK/list.tsv" ]; then
+            echo "Ingen interne pakker under $SCOPE"
+            exit 0
+          fi
+ 
+          NAME_RE="^${SCOPE}/[a-z0-9][a-z0-9._-]*$"
+          VER_RE='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          FAILED=0
+          VERIFIED=0
+          declare -A SEEN
+          i=0
+ 
+          while IFS=$'\t' read -r NAME VERSION RESOLVED INTEGRITY; do
+            i=$((i+1))
+ 
+            # Valider før noe logges eller sendes til verktøy
+            if [[ ! "$NAME" =~ $NAME_RE ]] || [[ ! "$VERSION" =~ $VER_RE ]]; then
+              echo "::error::Oppføring $i: ugyldig navn/versjon (alias eller spec-injeksjon?)"
+              FAILED=1; continue
+            fi
+            if [[ "$RESOLVED" != "${REGISTRY}"* ]]; then
+              echo "::error::$NAME@$VERSION resolves ikke fra $REGISTRY"
+              FAILED=1; continue
+            fi
+            if [[ "$INTEGRITY" != sha512-* || "$INTEGRITY" == *" "* ]]; then
+              echo "::error::$NAME@$VERSION mangler entydig sha512-integrity"
+              FAILED=1; continue
+            fi
+ 
+            KEY="${RESOLVED} ${INTEGRITY}"
+            if [[ -n "${SEEN[$KEY]:-}" ]]; then
+              continue
+            fi
+            SEEN[$KEY]=1
+ 
+            echo "::group::$NAME@$VERSION"
+            FILE="$WORK/pkg-$i.tgz"
+ 
+            # 1. Last ned pakken fra GitHub-registryet med token, og lagre til midlertidig fil
+            # 2. Sjekk integritet av nedlastet fil mot integritet i package-lock.json
+            # 3. Sjekk attestasjon mot forventet signer og workflow
+            if ! curl -fsSL \
+                --proto '=https' --proto-redir '=https' \
+                --retry 3 --max-time 120 --max-filesize 104857600 \
+                -H @<(printf 'Authorization: Bearer %s\n' "$GH_TOKEN") \
+                -o "$FILE" "$RESOLVED"; then
+              echo "::error::Kunne ikke laste ned $NAME@$VERSION"
+              FAILED=1
+            else
+              ACTUAL="sha512-$(openssl dgst -sha512 -binary "$FILE" | base64 -w0)"
+              if [[ "$ACTUAL" != "$INTEGRITY" ]]; then
+                echo "::error::Integrity-mismatch for $NAME@$VERSION"
+                FAILED=1
+              elif ! gh attestation verify "$FILE" \
+                  --repo "${ORG}/${NAME#"${SCOPE}/"}" \
+                  --cert-identity "$SIGNER_ID" \
+                  --predicate-type https://slsa.dev/provenance/v1 \
+                  --source-ref "$SOURCE_REF" \
+                  --deny-self-hosted-runners; then
+                echo "::error::Attestasjon feilet for $NAME@$VERSION"
+                FAILED=1
+              else
+                VERIFIED=$((VERIFIED+1))
+              fi
+            fi
+ 
+            rm -f "$FILE"
+            echo "::endgroup::"
+          done < "$WORK/list.tsv"
+ 
+          echo "Verifisert: $VERIFIED unike interne pakker"
+ 
+          [ "$FAILED" -eq 0 ] || {
+            echo "::error::En eller flere interne pakker mangler gyldig attestasjon"
+            exit 1
+          }
+ 
