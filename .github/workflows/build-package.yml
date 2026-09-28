@@ -68,7 +68,7 @@ jobs:
         id: pack
         run: |
           set -euo pipefail
-          TARBALL=$(npm pack --json ${{ (!(env.IS_RELEASE) && '--dry-run') || ''}} | jq -r '.[0].filename')
+          TARBALL=$(npm pack --ignore-scripts --json ${{ (!(env.IS_RELEASE) && '--dry-run') || ''}} | jq -r '.[0].filename')
           if [ "$IS_RELEASE" ]; then
             echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
             echo "digest=sha256:$(sha256sum "$TARBALL" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
