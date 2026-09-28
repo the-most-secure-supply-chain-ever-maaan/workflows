@@ -26,46 +26,88 @@ jobs:
 
       - name: Verify attestations for internal packages
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-
+          GH_TOKEN: ${{ github.token }}
+          
         run: |
           set -euo pipefail
 
-          PKGS=$(jq -r --arg s "node_modules/$SCOPE/" \
-            '.packages | keys[] | select(startswith($s))' package-lock.json)
+          ORG="the-most-secure-supply-chain-ever-maaan"
+          SCOPE="@${ORG}"
+          REG="https://npm.pkg.github.com/"
+          SIGNER_ID="https://github.com/${ORG}/workflows/.github/workflows/build-package.yml@refs/heads/main"
+          WORK=$(mktemp -d)
 
-          if [ -z "$PKGS" ]; then
+          jq -e '(.lockfileVersion // 0) >= 2' package-lock.json >/dev/null \
+            || { echo "::error::Krever lockfileVersion >= 2"; exit 1; }
+
+          # Alt under scopet (uansett nesting) ELLER alt fra GitHub-registryet.
+          # "-" som fyll, fordi tab er IFS-whitespace og tomme felt ellers kollapser.
+          jq -r --arg s "node_modules/${SCOPE}/" --arg r "$REG" '
+            .packages | to_entries[]
+            | select(.key != "")
+            | select((.key | contains($s)) or ((.value.resolved // "") | startswith($r)))
+            | [ (.value.name // (.key | sub(".*node_modules/"; ""))),
+                (.value.version   // "-"),
+                (.value.resolved  // "-"),
+                (.value.integrity // "-") ]
+            | @tsv' package-lock.json > "$WORK/list.tsv"
+
+          if [ ! -s "$WORK/list.tsv" ]; then
             echo "Ingen interne pakker under $SCOPE"
             exit 0
           fi
 
-          WORKDIR=$(mktemp -d)
-          printf '%s:registry=%s\n' "$SCOPE" "$REGISTRY" > "$WORKDIR/.npmrc"
-          printf '//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}\n' >> "$WORKDIR/.npmrc"
-
+          NAME_RE="^${SCOPE}/[a-z0-9][a-z0-9._-]*$"
+          VER_RE='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
           FAILED=0
+          declare -A SEEN
+          i=0
 
-          for P in $PKGS; do
-            NAME="${P##*node_modules/}"
-            REPO="${NAME##*/}"
-            VERSION=$(jq -r --arg p "$P" '.packages[$p].version' package-lock.json)
+          while IFS=$'\t' read -r NAME VERSION RESOLVED INTEGRITY; do
+            i=$((i+1))
+
+            # Valider ALT før noe skrives til logg eller sendes til verktøy
+            if [[ ! "$NAME" =~ $NAME_RE ]] || [[ ! "$VERSION" =~ $VER_RE ]]; then
+              echo "::error::Oppføring $i: ugyldig navn/versjon (alias eller spec-injeksjon?)"
+              FAILED=1; continue
+            fi
+            if [[ "$RESOLVED" != "${REG}"* ]]; then
+              echo "::error::$NAME@$VERSION resolves ikke fra $REG"
+              FAILED=1; continue
+            fi
+            if [[ "$INTEGRITY" != sha512-* || "$INTEGRITY" == *" "* ]]; then
+              echo "::error::$NAME@$VERSION mangler entydig sha512-integrity"
+              FAILED=1; continue
+            fi
+
+            [[ -n "${SEEN[$RESOLVED]:-}" ]] && continue
+            SEEN[$RESOLVED]=1
 
             echo "::group::$NAME@$VERSION"
+            FILE="$WORK/pkg-$i.tgz"
 
-            FILE=$(cd "$WORKDIR" && npm pack "$NAME@$VERSION" --silent)
-            TARBALL="$WORKDIR/$FILE"
+            # Hent NØYAKTIG det npm ci vil hente – ingen .npmrc involvert
+            curl -fsSL --proto '=https' \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -o "$FILE" "$RESOLVED"
 
-            gh attestation verify "$TARBALL" \
-              --repo "$OWNER/$REPO" \
-              --signer-workflow "$SIGNER_WORKFLOW" \
-              --predicate-type https://slsa.dev/provenance/v1 \
-              --source-ref refs/heads/main || FAILED=1
+            ACTUAL="sha512-$(openssl dgst -sha512 -binary "$FILE" | base64 -w0)"
+            if [[ "$ACTUAL" != "$INTEGRITY" ]]; then
+              echo "::error::Integrity-mismatch for $NAME@$VERSION"
+              FAILED=1
+            else
+              gh attestation verify "$FILE" \
+                --repo "${ORG}/${NAME#"${SCOPE}/"}" \
+                --cert-identity "$SIGNER_ID" \
+                --predicate-type https://slsa.dev/provenance/v1 \
+                --source-ref refs/heads/main \
+                --deny-self-hosted-runners \
+                || FAILED=1
+            fi
 
-            rm -f "$TARBALL"
+            rm -f "$FILE"
             echo "::endgroup::"
-          done
+          done < "$WORK/list.tsv"
 
           [ "$FAILED" -eq 0 ] || {
             echo "::error::En eller flere interne pakker mangler gyldig attestasjon"
