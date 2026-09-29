@@ -91,7 +91,7 @@ jobs:
           download_package() {
             local url=$1 file=$2
             curl -fsSL --proto '=https' --proto-redir '=https' \
-              -H "Authorization: Bearer $GH_TOKEN" \
+              -H @<(printf 'Authorization: Bearer %s\n' "$GH_TOKEN") \
               -o "$file" "$url"
           }
 
