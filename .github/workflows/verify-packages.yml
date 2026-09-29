@@ -34,21 +34,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
- 
-          # Tillatt: npmjs eller GitHub-registryet med sha512, eller workspace-lenke i repoet
+
+          # Tillatt: npmjs eller GitHub-registryet med sha512
           BAD=$(jq -r --arg gh "$REGISTRY" --arg npm "https://registry.npmjs.org/" '
             .packages | to_entries[]
             | select(.key | contains("node_modules/"))
             | select(.value.inBundle != true)
             | select(
-                if .value.link == true then
-                  (.value.resolved // "/") | startswith("/") or contains("..")
-                else
-                  ((.value.resolved // "") | (startswith($gh) or startswith($npm)) | not)
-                  or ((.value.integrity // "") | startswith("sha512-") | not)
-                end)
+                ((.value.resolved // "") | (startswith($gh) or startswith($npm)) | not)
+                or ((.value.integrity // "") | startswith("sha512-") | not))
             | .key | @json' package-lock.json)
- 
+
           if [ -n "$BAD" ]; then
             echo "::error::Avhengigheter fra ikke-tillatt kilde eller uten sha512-integrity:"
             printf '%s\n' "$BAD"
