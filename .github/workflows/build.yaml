@@ -7,7 +7,6 @@ on:
         description: "Digest til det pushede imaget"
         value: ${{ jobs.release.outputs.digest }}
 
-# Ingen rettigheter som standard. Hver jobb ber om det den trenger.
 permissions: {}
 
 env:
