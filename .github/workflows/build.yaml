@@ -20,6 +20,13 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  verify-dependencies:
+    uses: $/.github/workflows/verify-packages.yml
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+
   build-source:
     runs-on: ubuntu-latest
     outputs:
@@ -32,9 +39,6 @@ jobs:
 
       - name: Run zizmor
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
-
-      - name: Verify internal packages
-        uses: $/.github/workflows/verify-packages.yml
 
       - name: Authenticate to private Docker registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
