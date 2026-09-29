@@ -21,7 +21,7 @@ env:
 
 jobs:
   verify-dependencies:
-    uses: ./.github/workflows/verify-packages.yml
+    uses: $/.github/workflows/verify-packages.yml
     permissions:
       contents: read
       packages: read
