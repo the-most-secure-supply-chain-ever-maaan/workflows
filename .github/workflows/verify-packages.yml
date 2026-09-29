@@ -107,7 +107,7 @@ jobs:
                 FAILED=1
               elif ! gh attestation verify "$FILE" \
                   --repo "${ORG}/${NAME#"${SCOPE}/"}" \
-                  --cert-identity "$SIGNER_ID" \
+                  --cert-identity-regex "^https://github\.com/${ORG}/workflows/${SIGNER_WORKFLOW_PATH//./\\.}@.*$" \
                   --predicate-type https://slsa.dev/provenance/v1 \
                   --source-ref "$SOURCE_REF" \
                   --deny-self-hosted-runners; then
