@@ -113,7 +113,7 @@ jobs:
               --deny-self-hosted-runners
           }
  
-          list_internal_packages > "$WORK/list.tsv"
+          list_internal_packages | sort -u > "$WORK/list.tsv"
           if [ ! -s "$WORK/list.tsv" ]; then
             echo "Ingen interne pakker under $SCOPE"
             exit 0
