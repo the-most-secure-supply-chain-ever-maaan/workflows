@@ -112,22 +112,22 @@ jobs:
               --source-ref "$SOURCE_REF" \
               --deny-self-hosted-runners
           }
- 
+
           list_internal_packages | sort -u > "$WORK/list.tsv"
           if [ ! -s "$WORK/list.tsv" ]; then
             echo "Ingen interne pakker under $SCOPE"
             exit 0
           fi
- 
+
           failed=0
-          verified=0
- 
+          verified_packages=()
+
           while IFS=$'\t' read -r name version resolved integrity; do
             is_valid_lockfile_entry "$name" "$version" "$resolved" "$integrity" || { failed=1; continue; }
- 
+
             echo "::group::$name@$version"
             file="$WORK/package.tgz"
- 
+
             if ! download_package "$resolved" "$file"; then
               echo "::error::Kunne ikke laste ned $name@$version"; failed=1
             elif ! verify_package_integrity "$file" "$integrity"; then
@@ -135,14 +135,17 @@ jobs:
             elif ! verify_package_attestation "$file" "$name"; then
               echo "::error::Attestasjon feilet for $name@$version"; failed=1
             else
-              verified=$((verified+1))
+              verified_packages+=("$name@$version")
             fi
- 
+
             rm -f "$file"
             echo "::endgroup::"
           done < "$WORK/list.tsv"
- 
-          echo "Verifisert: $verified interne pakker"
+
+          echo "Verifisert ${#verified_packages[@]} interne pakker:"
+          if [ ${#verified_packages[@]} -gt 0 ]; then
+            printf '  %s\n' "${verified_packages[@]}"
+          fi
           if [ "$failed" -ne 0 ]; then
             echo "::error::En eller flere interne pakker mangler gyldig attestasjon"
             exit 1
